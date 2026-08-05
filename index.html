@@ -102,6 +102,9 @@
         font-size: 10px;
     }
 }
+#container {
+    touch-action: none; /* отключаем скролл и зум страницы */
+}
     </style>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -723,30 +726,29 @@
                 applyTransform();
             }, { passive: false });
 
+            // --- Ресайз ---
             let resizeTimeout;
             window.addEventListener('resize', function() {
                 clearTimeout(resizeTimeout);
                 resizeTimeout = setTimeout(fitToWidth, 150);
             });
 
-            // +++ ДОБАВЛЯЕМ ПЕРЕТАСКИВАНИЕ МЫШКОЙ (PAN) +++
+            // --- Перетаскивание мышкой (PAN) ---
             var isDragging = false;
             var startDragX = 0, startDragY = 0;
             var startOffsetX = 0, startOffsetY = 0;
 
-            // Начинаем перетаскивание по нажатию левой кнопки на контейнере
             container.addEventListener('mousedown', function(e) {
-                if (e.button !== 0) return; // только левая кнопка
+                if (e.button !== 0) return;
                 isDragging = true;
                 startDragX = e.clientX;
                 startDragY = e.clientY;
                 startOffsetX = offsetX;
                 startOffsetY = offsetY;
                 container.style.cursor = 'grabbing';
-                e.preventDefault(); // предотвращаем выделение
+                e.preventDefault();
             });
 
-            // Движение мыши – обновляем смещение, если перетаскивание активно
             document.addEventListener('mousemove', function(e) {
                 if (!isDragging) return;
                 var dx = e.clientX - startDragX;
@@ -757,7 +759,6 @@
                 e.preventDefault();
             });
 
-            // Отпускаем кнопку – завершаем перетаскивание
             document.addEventListener('mouseup', function(e) {
                 if (isDragging) {
                     isDragging = false;
@@ -765,7 +766,6 @@
                 }
             });
 
-            // Защита от потери захвата (если курсор вышел за пределы окна)
             window.addEventListener('blur', function() {
                 if (isDragging) {
                     isDragging = false;
@@ -773,13 +773,93 @@
                 }
             });
 
-            // +++ КОНЕЦ ДОБАВЛЕНИЯ +++
+            // --- ПОДДЕРЖКА МУЛЬТИТАЧ (мобильные) ---
+            var lastTouchDist = 0;
+            var startTouchScale = 1;
+            var isTouching = false;
+            var isPinching = false;
+            var touchStartX = 0, touchStartY = 0;
+            var touchStartOffsetX = 0, touchStartOffsetY = 0;
 
-        });
-    })();
+            container.addEventListener('touchstart', function(e) {
+                var touches = e.touches;
+                if (touches.length === 1) {
+                    isTouching = true;
+                    isPinching = false;
+                    touchStartX = touches[0].clientX;
+                    touchStartY = touches[0].clientY;
+                    touchStartOffsetX = offsetX;
+                    touchStartOffsetY = offsetY;
+                } else if (touches.length === 2) {
+                    isTouching = true;
+                    isPinching = true;
+                    var dx = touches[0].clientX - touches[1].clientX;
+                    var dy = touches[0].clientY - touches[1].clientY;
+                    lastTouchDist = Math.sqrt(dx*dx + dy*dy);
+                    startTouchScale = currentScale;
+                    var cx = (touches[0].clientX + touches[1].clientX) / 2;
+                    var cy = (touches[0].clientY + touches[1].clientY) / 2;
+                    // Сохраняем точку в координатах content (до масштабирования)
+                    window._pinchCenterX = (cx - offsetX) / currentScale;
+                    window._pinchCenterY = (cy - offsetY) / currentScale;
+                }
+                e.preventDefault();
+            }, { passive: false });
+
+            container.addEventListener('touchmove', function(e) {
+                var touches = e.touches;
+                if (!isTouching) return;
+
+                if (touches.length === 1 && !isPinching) {
+                    var dx = touches[0].clientX - touchStartX;
+                    var dy = touches[0].clientY - touchStartY;
+                    offsetX = touchStartOffsetX + dx;
+                    offsetY = touchStartOffsetY + dy;
+                    applyTransform();
+                } else if (touches.length === 2 && isPinching) {
+                    var dx = touches[0].clientX - touches[1].clientX;
+                    var dy = touches[0].clientY - touches[1].clientY;
+                    var dist = Math.sqrt(dx*dx + dy*dy);
+                    var scaleFactor = dist / lastTouchDist;
+                    var newScale = startTouchScale * scaleFactor;
+                    if (newScale < 0.05) newScale = 0.05;
+                    if (newScale > 5) newScale = 5;
+
+                    var cx = (touches[0].clientX + touches[1].clientX) / 2;
+                    var cy = (touches[0].clientY + touches[1].clientY) / 2;
+
+                    var centerX = window._pinchCenterX;
+                    var centerY = window._pinchCenterY;
+                    offsetX = cx - centerX * newScale;
+                    offsetY = cy - centerY * newScale;
+
+                    currentScale = newScale;
+                    applyTransform();
+
+                    // Обновляем центр и масштаб для следующего шага
+                    window._pinchCenterX = (cx - offsetX) / currentScale;
+                    window._pinchCenterY = (cy - offsetY) / currentScale;
+                    startTouchScale = currentScale;
+                    lastTouchDist = dist;
+                }
+                e.preventDefault();
+            }, { passive: false });
+
+            container.addEventListener('touchend', function(e) {
+                isTouching = false;
+                isPinching = false;
+            }, { passive: false });
+
+            container.addEventListener('touchcancel', function(e) {
+                isTouching = false;
+                isPinching = false;
+            }, { passive: false });
+
+        }); // конец window.addEventListener('load')
+    })(); // конец анонимной функции
 </script>
 
-<!-- второй скрипт для обновления map-координат (без изменений) -->
+<!-- Второй скрипт – только для обновления координат area при ресайзе -->
 <script type="text/javascript">
     (function() {
         function updateMapCoords() {
@@ -838,5 +918,6 @@
         });
     })();
 </script>
+
 </body>
 </html>
