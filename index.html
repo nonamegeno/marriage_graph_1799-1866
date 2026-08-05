@@ -69,8 +69,43 @@
 #header .subtitle-small  {
     font-family: 'Arial', sans-serif;
 }
+.yimage {
+  width: 100%;
+  height: auto;
+  display: block; /* убирает лишний отступ снизу */
+}
 
+@media (max-width: 768px) {
+    #header h1 {
+        font-size: 20px;        /* было 26px */
+    }
+    #header .subtitle {
+        font-size: 13px;        /* было 16px */
+    }
+    #header .subtitle-small {
+        font-size: 11px;        /* было 12px – можно оставить, но слегка уменьшим */
+    }
+    #header {
+        padding: 8px 12px;      /* чуть меньше отступов */
+    }
+}
+
+/* Очень маленькие телефоны (до 480px) – можно ещё сильнее уменьшить */
+@media (max-width: 480px) {
+    #header h1 {
+        font-size: 18px;
+    }
+    #header .subtitle {
+        font-size: 12px;
+    }
+    #header .subtitle-small {
+        font-size: 10px;
+    }
+}
     </style>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 </head>
 <body>
 
@@ -691,9 +726,78 @@
                 currentScale = newScale;
                 applyTransform();
             }, { passive: false });
+    let resizeTimeout;
+    window.addEventListener('resize', function() {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(fitToWidth, 150);
+    });
         });
     })();
 </script>
+<script type="text/javascript">
+(function() {
+    // Функция обновления координат всех area
+    function updateMapCoords() {
+        var img = document.querySelector('.yimage');
+        var map = document.querySelector('map[name="image1_1"]');
+        if (!img || !map) return;
 
+        // Сохраняем оригинальные координаты при первом вызове
+        if (!map.dataset.origCoordsSaved) {
+            var areas = map.querySelectorAll('area');
+            areas.forEach(function(area) {
+                var coords = area.getAttribute('coords');
+                if (coords) {
+                    area.dataset.origCoords = coords;
+                }
+            });
+            map.dataset.origCoordsSaved = 'true';
+        }
+
+        var currentWidth = img.clientWidth;
+        var currentHeight = img.clientHeight;
+        // Оригинальные размеры берём из атрибутов naturalWidth/Height
+        var origWidth = img.naturalWidth;
+        var origHeight = img.naturalHeight;
+        if (origWidth === 0 || origHeight === 0) return; // если картинка ещё не загружена
+
+        var scaleX = currentWidth / origWidth;
+        var scaleY = currentHeight / origHeight;
+
+        var areas = map.querySelectorAll('area');
+        areas.forEach(function(area) {
+            var origCoords = area.dataset.origCoords;
+            if (!origCoords) return;
+            var coordsArray = origCoords.split(',').map(Number);
+            var newCoords = coordsArray.map(function(coord, index) {
+                // Чётные индексы — X, нечётные — Y
+                return index % 2 === 0 
+                    ? Math.round(coord * scaleX) 
+                    : Math.round(coord * scaleY);
+            });
+            area.setAttribute('coords', newCoords.join(','));
+        });
+    }
+
+    // Выполняем обновление при загрузке и при изменении размера окна
+    window.addEventListener('load', function() {
+        // Ждём, пока картинка полностью загрузится
+        var img = document.querySelector('.yimage');
+        if (img) {
+            if (img.complete) {
+                updateMapCoords();
+            } else {
+                img.addEventListener('load', updateMapCoords);
+            }
+        }
+        // Обновляем при изменении размера окна (с небольшим debounce для производительности)
+        var resizeTimer;
+        window.addEventListener('resize', function() {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(updateMapCoords, 100);
+        });
+    });
+})();
+</script>
 </body>
 </html>
