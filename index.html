@@ -645,17 +645,14 @@
             var areas = document.querySelectorAll('map[name="image1_1"] area');
             var tooltips = document.querySelectorAll('.tooltip');
 
-            // Создаём карту id -> элемент tooltip
             var tipMap = {};
             tooltips.forEach(function(tip) {
                 tipMap[tip.id] = tip;
             });
 
             areas.forEach(function(area) {
-                // Извлекаем id из onmouseover (например, "showTip(event,'n0')")
                 var ov = area.getAttribute('onmouseover');
                 if (!ov) return;
-                // Ищем строку вида 'n0' в кавычках
                 var match = ov.match(/['"]n(\d+)['"]/);
                 if (!match) return;
                 var tipId = 'n' + match[1];
@@ -714,7 +711,6 @@
                 if (newScale < 0.05) newScale = 0.05;
                 if (newScale > 5) newScale = 5;
 
-                // Координаты точки в системе координат #content
                 var contentX = (mouseX - offsetX) / currentScale;
                 var contentY = (mouseY - offsetY) / currentScale;
 
@@ -726,78 +722,121 @@
                 currentScale = newScale;
                 applyTransform();
             }, { passive: false });
-    let resizeTimeout;
-    window.addEventListener('resize', function() {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(fitToWidth, 150);
-    });
+
+            let resizeTimeout;
+            window.addEventListener('resize', function() {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(fitToWidth, 150);
+            });
+
+            // +++ ДОБАВЛЯЕМ ПЕРЕТАСКИВАНИЕ МЫШКОЙ (PAN) +++
+            var isDragging = false;
+            var startDragX = 0, startDragY = 0;
+            var startOffsetX = 0, startOffsetY = 0;
+
+            // Начинаем перетаскивание по нажатию левой кнопки на контейнере
+            container.addEventListener('mousedown', function(e) {
+                if (e.button !== 0) return; // только левая кнопка
+                isDragging = true;
+                startDragX = e.clientX;
+                startDragY = e.clientY;
+                startOffsetX = offsetX;
+                startOffsetY = offsetY;
+                container.style.cursor = 'grabbing';
+                e.preventDefault(); // предотвращаем выделение
+            });
+
+            // Движение мыши – обновляем смещение, если перетаскивание активно
+            document.addEventListener('mousemove', function(e) {
+                if (!isDragging) return;
+                var dx = e.clientX - startDragX;
+                var dy = e.clientY - startDragY;
+                offsetX = startOffsetX + dx;
+                offsetY = startOffsetY + dy;
+                applyTransform();
+                e.preventDefault();
+            });
+
+            // Отпускаем кнопку – завершаем перетаскивание
+            document.addEventListener('mouseup', function(e) {
+                if (isDragging) {
+                    isDragging = false;
+                    container.style.cursor = 'grab';
+                }
+            });
+
+            // Защита от потери захвата (если курсор вышел за пределы окна)
+            window.addEventListener('blur', function() {
+                if (isDragging) {
+                    isDragging = false;
+                    container.style.cursor = 'grab';
+                }
+            });
+
+            // +++ КОНЕЦ ДОБАВЛЕНИЯ +++
+
         });
     })();
 </script>
-<script type="text/javascript">
-(function() {
-    // Функция обновления координат всех area
-    function updateMapCoords() {
-        var img = document.querySelector('.yimage');
-        var map = document.querySelector('map[name="image1_1"]');
-        if (!img || !map) return;
 
-        // Сохраняем оригинальные координаты при первом вызове
-        if (!map.dataset.origCoordsSaved) {
+<!-- второй скрипт для обновления map-координат (без изменений) -->
+<script type="text/javascript">
+    (function() {
+        function updateMapCoords() {
+            var img = document.querySelector('.yimage');
+            var map = document.querySelector('map[name="image1_1"]');
+            if (!img || !map) return;
+
+            if (!map.dataset.origCoordsSaved) {
+                var areas = map.querySelectorAll('area');
+                areas.forEach(function(area) {
+                    var coords = area.getAttribute('coords');
+                    if (coords) {
+                        area.dataset.origCoords = coords;
+                    }
+                });
+                map.dataset.origCoordsSaved = 'true';
+            }
+
+            var currentWidth = img.clientWidth;
+            var currentHeight = img.clientHeight;
+            var origWidth = img.naturalWidth;
+            var origHeight = img.naturalHeight;
+            if (origWidth === 0 || origHeight === 0) return;
+
+            var scaleX = currentWidth / origWidth;
+            var scaleY = currentHeight / origHeight;
+
             var areas = map.querySelectorAll('area');
             areas.forEach(function(area) {
-                var coords = area.getAttribute('coords');
-                if (coords) {
-                    area.dataset.origCoords = coords;
+                var origCoords = area.dataset.origCoords;
+                if (!origCoords) return;
+                var coordsArray = origCoords.split(',').map(Number);
+                var newCoords = coordsArray.map(function(coord, index) {
+                    return index % 2 === 0 
+                        ? Math.round(coord * scaleX) 
+                        : Math.round(coord * scaleY);
+                });
+                area.setAttribute('coords', newCoords.join(','));
+            });
+        }
+
+        window.addEventListener('load', function() {
+            var img = document.querySelector('.yimage');
+            if (img) {
+                if (img.complete) {
+                    updateMapCoords();
+                } else {
+                    img.addEventListener('load', updateMapCoords);
                 }
-            });
-            map.dataset.origCoordsSaved = 'true';
-        }
-
-        var currentWidth = img.clientWidth;
-        var currentHeight = img.clientHeight;
-        // Оригинальные размеры берём из атрибутов naturalWidth/Height
-        var origWidth = img.naturalWidth;
-        var origHeight = img.naturalHeight;
-        if (origWidth === 0 || origHeight === 0) return; // если картинка ещё не загружена
-
-        var scaleX = currentWidth / origWidth;
-        var scaleY = currentHeight / origHeight;
-
-        var areas = map.querySelectorAll('area');
-        areas.forEach(function(area) {
-            var origCoords = area.dataset.origCoords;
-            if (!origCoords) return;
-            var coordsArray = origCoords.split(',').map(Number);
-            var newCoords = coordsArray.map(function(coord, index) {
-                // Чётные индексы — X, нечётные — Y
-                return index % 2 === 0 
-                    ? Math.round(coord * scaleX) 
-                    : Math.round(coord * scaleY);
-            });
-            area.setAttribute('coords', newCoords.join(','));
-        });
-    }
-
-    // Выполняем обновление при загрузке и при изменении размера окна
-    window.addEventListener('load', function() {
-        // Ждём, пока картинка полностью загрузится
-        var img = document.querySelector('.yimage');
-        if (img) {
-            if (img.complete) {
-                updateMapCoords();
-            } else {
-                img.addEventListener('load', updateMapCoords);
             }
-        }
-        // Обновляем при изменении размера окна (с небольшим debounce для производительности)
-        var resizeTimer;
-        window.addEventListener('resize', function() {
-            clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(updateMapCoords, 100);
+            var resizeTimer;
+            window.addEventListener('resize', function() {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(updateMapCoords, 100);
+            });
         });
-    });
-})();
+    })();
 </script>
 </body>
 </html>
